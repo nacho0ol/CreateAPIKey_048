@@ -1,53 +1,70 @@
+
 const express = require("express");
-const path = require("path");
-const crypto = require("crypto");
 const app = express();
-const port = 3000;
-
-let lastGeneratedKey = null;
-
-app.use(express.static(path.join(__dirname, "public")));
-
-app.use(express.text());
+const PORT = 3000;
+const db = require("./models"); 
 
 app.use(express.json());
+app.use(
+  express.urlencoded({
+    extended: false,
+  })
+);
 
-app.post("/create", (req, res) => {
+
+
+app.post("/Komik", async (req, res) => {
+  const data = req.body;
   try {
-    const randomBytes = crypto.randomBytes(32);
-    const token = randomBytes.toString("base64url");
-    const stamp = Date.now().toString(16);
-    const apiKey = `${stamp}$${token}`;
-
-    lastGeneratedKey = apiKey;
-    console.log(`Key baru dibuat: ${apiKey}`);
-
-    res.json({ apiKey: apiKey });
+    
+    const komik = await db.Komik.create(data);
+    res.status(201).send(komik);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Gagal membuat API key" });
+    res.status(500).send(err);
   }
 });
 
-app.post("/validate", (req, res) => {
-  const keyFromPostman = req.body;
-
-  console.log(`Mencoba validasi key: ${keyFromPostman}`);
-  console.log(`Key yang disimpan: ${lastGeneratedKey}`);
-
-  if (keyFromPostman === lastGeneratedKey) {
-    res.json({
-      status: "sukses",
-      message: "API Key valid dan terautentikasi.",
-    });
-  } else {
-    res.status(401).json({
-      status: "gagal",
-      message: "API Key tidak valid atau salah.",
-    });
+app.get("/Komik", async (req, res) => {
+  try {
+    const komiks = await db.Komik.findAll();
+    res.send(komiks);
+  } catch (err) {
+    res.status(500).send(err);
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server berjalan di http://localhost:${port}`);
+app.put("/Komik/:id", async (req, res) => {
+  const id = req.params.id;
+  const data = req.body;
+
+  try {
+    const komik = await db.Komik.findByPk(id);
+    if (!komik) {
+      return res.status(404).send("Komik not found");
+    }
+    await komik.update(data);
+    res.send({ message: "Komik updated successfully", Komik: komik });
+  } catch (err) {
+    res.status(500).send(err);
+  }
+});
+
+app.delete("/Komik/:id", async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    const komik = await db.Komik.findByPk(id);
+    if (!komik) {
+      return res.status(404).send("Komik not found");
+    }
+    await komik.destroy();
+    res.send({ message: "Komik deleted successfully" });
+  } catch (err) {
+    res.status(500).send(err);
+  }
+});
+
+
+app.listen(PORT, () => {
+  console.log(`Server started on port ${PORT}`);
 });
