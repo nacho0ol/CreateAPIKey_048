@@ -1,70 +1,79 @@
-
+require("dotenv").config();
+const mysql = require("mysql2/promise");
 const express = require("express");
+const path = require("path");
+const crypto = require("crypto");
+const port = 3000;
+
+//const db = require("./models");
+
 const app = express();
-const PORT = 3000;
-const db = require("./models"); 
-
-app.use(express.json());
-app.use(
-  express.urlencoded({
-    extended: false,
-  })
-);
+const PORT = process.env.PORT || 3000;
 
 
+app.use(express.json()); 
+app.use(express.static('public')); 
 
-app.post("/Komik", async (req, res) => {
-  const data = req.body;
+const pool = mysql.createPool({
+    host: process.env.DB_HOST,           
+    user: process.env.DB_USER,           
+    password: process.env.DB_PASSWORD,   
+    database: process.env.DB_NAME,       
+    port: process.env.DB_PORT,           
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
+
+const KEY_PREFIX = 'Olip_j1p4_';
+
+
+app.get('/generate-apikey', async (req, res) => {
   try {
+
+    const randomToken = crypto.randomBytes(16).toString('hex');
+    const newApiKey = KEY_PREFIX + randomToken;
     
-    const komik = await db.Komik.create(data);
-    res.status(201).send(komik);
-  } catch (err) {
-    res.status(500).send(err);
+
+    const sql = "INSERT INTO api_keys (api_key) VALUES (?)";
+    await pool.query(sql, [newApiKey]);
+    
+    console.log("Key baru dibuat & disimpan di DB:", newApiKey);
+    res.json({ apiKey: newApiKey });
+    
+  } catch (error) {
+    console.error("Error saat generate key:", error);
+    res.status(500).json({ error: 'Gagal membuat API key di database' });
   }
 });
 
-app.get("/Komik", async (req, res) => {
-  try {
-    const komiks = await db.Komik.findAll();
-    res.send(komiks);
-  } catch (err) {
-    res.status(500).send(err);
-  }
-});
 
-app.put("/Komik/:id", async (req, res) => {
-  const id = req.params.id;
-  const data = req.body;
-
+app.post('/validate-apikey', async (req, res) => {
   try {
-    const komik = await db.Komik.findByPk(id);
-    if (!komik) {
-      return res.status(404).send("Komik not found");
+    const { apiKeyToValidate } = req.body;
+
+    if (!apiKeyToValidate) {
+      return res.status(400).json({ error: 'API key dibutuhkan' });
     }
-    await komik.update(data);
-    res.send({ message: "Komik updated successfully", Komik: komik });
-  } catch (err) {
-    res.status(500).send(err);
-  }
-});
 
-app.delete("/Komik/:id", async (req, res) => {
-  const id = req.params.id;
 
-  try {
-    const komik = await db.Komik.findByPk(id);
-    if (!komik) {
-      return res.status(404).send("Komik not found");
+    const sql = "SELECT COUNT(*) as count FROM api_keys WHERE api_key = ?";
+    const [rows] = await pool.query(sql, [apiKeyToValidate]);
+    const count = rows[0].count;
+
+    if (count > 0) {
+      res.json({ valid: true, message: 'API Key sudah Valid' });
+    } else {
+      res.status(401).json({ valid: false, message: 'API Key Tidak Valid atau Tidak Ditemukan' });
     }
-    await komik.destroy();
-    res.send({ message: "Komik deleted successfully" });
-  } catch (err) {
-    res.status(500).send(err);
+  } catch (error) {
+    console.error("Error saat validasi key:", error);
+    res.status(500).json({ error: 'Gagal memvalidasi key di database' });
   }
 });
 
 
 app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+  console.log(`Server berjalan di http://localhost:${PORT}`);
+  console.log(`Terhubung ke database MySQL 'apikeya_orm_db'`);
 });
